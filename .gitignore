@@ -1,0 +1,10 @@
+*.png
+*.json
+.netlify/
+netlify-deploy/
+*_files/
+verification-*
+cube01-verify-*
+cube01-deployed-test*
+扭計骰入門教學：層疊法 - Google Gemini.html
+

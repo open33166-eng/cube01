@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>扭計骰 3D 雙模式 (含虛擬控制器)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        body { margin: 0; background-color: #f8fafc; font-family: -apple-system, sans-serif; overflow-x: hidden; display: flex; flex-direction: column; height: 100vh; }
+        
+        /* 頂部主選單 */
+        .main-tabs { display: flex; background: #1e293b; padding: 10px 10px 0 10px; gap: 8px; flex-shrink: 0; }
+        .main-tab { 
+            flex: 1; text-align: center; padding: 12px 0; border-radius: 12px 12px 0 0; 
+            font-weight: bold; color: #94a3b8; background: #334155; cursor: pointer;
+            transition: all 0.3s; font-size: 14px;
+        }
+        .main-tab.active { background: #f8fafc; color: #0f172a; }
+
+        /* 3D 畫面區 */
+        #canvas-container {
+            width: 100%; height: 35vh; background: radial-gradient(circle at center, #e2e8f0 0%, #cbd5e1 100%);
+            position: relative; touch-action: none; box-shadow: inset 0 -4px 10px rgba(0,0,0,0.05); flex-shrink: 0;
+        }
+        .overlay-badge {
+            position: absolute; top: 10px; right: 10px;
+            background: rgba(255,255,255,0.9); padding: 4px 10px;
+            border-radius: 6px; font-size: 11px; font-weight: bold; color: #334155; border: 1px solid #cbd5e1;
+            pointer-events: none; /* 確保不會擋住手指滑動 */
+        }
+
+        /* 下方內容區 */
+        .content-area { flex-grow: 1; overflow-y: auto; background: #f8fafc; display: flex; flex-direction: column; }
+        
+        /* 模式一：小步驟導航 */
+        .step-nav { display: flex; overflow-x: auto; padding: 12px; background: white; border-bottom: 2px solid #e2e8f0; scroll-behavior: smooth; flex-shrink: 0; }
+        .step-nav::-webkit-scrollbar { display: none; }
+        .step-tab { 
+            flex-shrink: 0; padding: 8px 16px; margin-right: 8px; border-radius: 8px; 
+            font-size: 13px; font-weight: bold; color: #64748b; background: #f1f5f9; 
+            border: 2px solid transparent; cursor: pointer;
+        }
+        .step-tab.active { background: #dbeafe; color: #1d4ed8; border-color: #3b82f6; }
+
+        /* 公式區塊 */
+        .move-box { transition: all 0.2s; font-family: monospace; }
+        .move-box.active { background-color: #3b82f6; color: white; transform: scale(1.15); box-shadow: 0 4px 6px rgba(59,130,246,0.3); }
+        .btn-action { background-color: #2563eb; color: white; transition: all 0.1s; }
+        .btn-action:active { transform: translateY(2px); }
+        .btn-action:disabled { background-color: #94a3b8; opacity: 0.8; }
+
+        /* 虛擬遙控器按鈕 */
+        .joypad-btn {
+            background: white; border: 1px solid #cbd5e1; border-radius: 8px; padding: 8px 0;
+            font-family: monospace; font-weight: bold; font-size: 16px; color: #334155;
+            box-shadow: 0 2px 0 #cbd5e1; transition: all 0.1s;
+        }
+        .joypad-btn:active { transform: translateY(2px); box-shadow: 0 0 0 #cbd5e1; background: #e2e8f0; }
+        .joypad-btn.prime { color: #b91c1c; } /* 反向轉動用紅色標示 */
+
+    </style>
+</head>
+<body>
+
+    <!-- 頂部兩大模式切換 -->
+    <div class="main-tabs">
+        <div id="tab-mode-1" class="main-tab active" onclick="switchMode(1)">1. 看動畫練習</div>
+        <div id="tab-mode-2" class="main-tab" onclick="switchMode(2)">2. 實戰自己玩</div>
+    </div>
+
+    <!-- 3D 顯示區 (共用) -->
+    <div id="canvas-container">
+        <div class="overlay-badge">☝️ 拖曳可轉動視角</div>
+    </div>
+
+    <!-- 內容區 -->
+    <div class="content-area">
+        
+        <!-- ================= 模式一：看動畫練習 ================= -->
+        <div id="section-mode-1" class="flex flex-col h-full">
+            <div class="step-nav" id="step-nav-container"></div>
+
+            <div class="p-4 max-w-md mx-auto w-full pb-10">
+                <div class="flex items-center gap-2 mb-2">
+                    <span id="step-badge" class="bg-blue-100 text-blue-800 text-xs font-bold px-2 py-1 rounded">第 X 步</span>
+                    <h2 id="step-title" class="text-xl font-black text-slate-800">載入中...</h2>
+                </div>
+                <p id="step-desc" class="text-sm text-slate-600 mb-4 leading-relaxed bg-slate-100 p-3 rounded-lg border border-slate-200"></p>
+
+                <!-- 播放器 -->
+                <div class="bg-white border-2 border-blue-400 rounded-xl p-4 shadow-sm">
+                    <div class="flex justify-between items-center mb-3">
+                        <span class="text-sm font-bold text-blue-700">跟著電腦示範慢慢轉：</span>
+                        <button onclick="resetCurrentStep()" class="text-xs text-slate-500 bg-slate-100 px-3 py-1 rounded-full hover:bg-slate-200">↺ 重設</button>
+                    </div>
+                    
+                    <div id="formula-display" class="flex flex-wrap gap-2 justify-center mb-4 text-sm font-bold text-slate-600 min-h-[32px]"></div>
+
+                    <div id="action-text" class="text-center font-bold text-lg text-blue-900 h-10 flex items-center justify-center bg-blue-50 rounded-lg mb-3">
+                        點擊下方按鈕開始
+                    </div>
+
+                    <button id="btn-next" onclick="nextMove()" class="w-full py-3 rounded-xl font-bold text-lg btn-action flex justify-center items-center gap-2 shadow-md">
+                        <span>點擊執行下一步</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ================= 模式二：實戰自己玩 ================= -->
+        <div id="section-mode-2" class="hidden p-4 max-w-md mx-auto w-full pb-10">
+            <div class="text-center mb-4">
+                <button onclick="scrambleCube()" class="bg-slate-800 text-white font-bold py-2 px-6 rounded-full hover:bg-slate-700 shadow-lg active:scale-95 transition-all">
+                    🎲 打亂方塊
+                </button>
+            </div>
+
+            <!-- 虛擬遙控器 (新加入的功能！) -->
+            <div class="bg-slate-100 border border-slate-300 rounded-xl p-3 mb-6 shadow-inner">
+                <h3 class="text-center text-sm font-bold text-slate-700 mb-2">🎮 虛擬遙控器 (點擊按鍵直接轉動)</h3>
+                <div class="grid grid-cols-5 gap-2 mb-2">
+                    <button onclick="manualMove('U')" class="joypad-btn">U (上)</button>
+                    <button onclick="manualMove('L')" class="joypad-btn">L (左)</button>
+                    <button onclick="manualMove('F')" class="joypad-btn">F (前)</button>
+                    <button onclick="manualMove('R')" class="joypad-btn">R (右)</button>
+                    <button onclick="manualMove('D')" class="joypad-btn">D (下)</button>
+                </div>
+                <div class="grid grid-cols-5 gap-2">
+                    <button onclick="manualMove('Ui')" class="joypad-btn prime">U'</button>
+                    <button onclick="manualMove('Li')" class="joypad-btn prime">L'</button>
+                    <button onclick="manualMove('Fi')" class="joypad-btn prime">F'</button>
+                    <button onclick="manualMove('Ri')" class="joypad-btn prime">R'</button>
+                    <button onclick="manualMove('Di')" class="joypad-btn prime">D'</button>
+                </div>
+                <p class="text-center text-[10px] text-slate-400 mt-2">黑色代表順時針，紅色(帶撇號)代表逆時針</p>
+            </div>
+
+            <!-- 公式小抄 -->
+            <h3 class="font-bold text-slate-700 mb-2 flex items-center gap-2"><span class="bg-slate-200 px-2 py-1 rounded text-xs">小抄</span> 忘記步驟了嗎？</h3>
+            <div class="space-y-2 mb-8">
+                <div class="bg-white border-l-4 border-blue-500 p-3 shadow-sm">
+                    <div class="font-bold text-sm text-slate-800">步 1 & 2：底層與角塊</div>
+                    <div class="text-xs text-slate-500 mt-1">右手公式：<span class="font-mono bg-slate-100 px-1 rounded text-blue-600 font-bold">R U R' U'</span></div>
+                </div>
+                <div class="bg-white border-l-4 border-blue-500 p-3 shadow-sm">
+                    <div class="font-bold text-sm text-slate-800">步 3：第二層邊塊</div>
+                    <div class="text-[11px] font-bold text-blue-700 mt-1 mb-1">🎯 目標：找頂層【無黃色】邊塊，對齊中心(呈倒T)</div>
+                    <div class="text-xs text-slate-500">
+                        🗣️口訣：<span class="font-bold text-slate-700">「一推遠離、二接客、三正門送回」</span><br>
+                        向右放 (推左，右接)：<span class="font-mono bg-slate-100 px-1 rounded text-blue-600 font-bold">U R U' R' U' F' U F</span><br>
+                        向左放 (推右，左接)：<span class="font-mono bg-slate-100 px-1 rounded text-blue-600 font-bold">U' L' U L U F U' F'</span>
+                    </div>
+                </div>
+                <div class="bg-white border-l-4 border-blue-500 p-3 shadow-sm">
+                    <div class="font-bold text-sm text-slate-800">步 4：頂層黃十字</div>
+                    <div class="text-xs text-slate-500 mt-1">口訣：<span class="font-mono bg-slate-100 px-1 rounded text-blue-600 font-bold">F (R U R' U') F'</span></div>
+                </div>
+                <div class="bg-white border-l-4 border-blue-500 p-3 shadow-sm">
+                    <div class="font-bold text-sm text-slate-800">步 5：對齊邊塊 (小魚公式)</div>
+                    <div class="text-xs text-slate-500 mt-1">口訣：<span class="font-mono bg-slate-100 px-1 rounded text-blue-600 font-bold">R U R' U R U2 R'</span></div>
+                </div>
+                <div class="bg-white border-l-4 border-blue-500 p-3 shadow-sm">
+                    <div class="font-bold text-sm text-slate-800">步 6：角塊大風吹</div>
+                    <div class="text-xs text-slate-500 mt-1">口訣：<span class="font-mono bg-slate-100 px-1 rounded text-blue-600 font-bold">U R U' L' U R' U' L</span></div>
+                </div>
+                <div class="bg-white border-l-4 border-blue-500 p-3 shadow-sm">
+                    <div class="font-bold text-sm text-slate-800">步 7：翻正黃色</div>
+                    <div class="text-xs text-slate-500 mt-1">瘋狂重複 <span class="font-mono bg-slate-100 px-1 rounded text-blue-600 font-bold">R' D' R D</span>，換角塊只轉頂部(U)</div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // --- 字典與資料 ---
+        const moveDict = {
+            'R':  { label: 'R', text: '【右】側 向上轉 ↑', axis: 'x', sign: -1, layer: p => p.x > 0.5 },
+            'Ri': { label: "R'", text: '【右】側 向下轉 ↓', axis: 'x', sign: 1, layer: p => p.x > 0.5 },
+            'L':  { label: 'L', text: '【左】側 向下轉 ↓', axis: 'x', sign: 1, layer: p => p.x < -0.5 },
+            'Li': { label: "L'", text: '【左】側 向上轉 ↑', axis: 'x', sign: -1, layer: p => p.x < -0.5 },
+            'U':  { label: 'U', text: '【上】層 向左轉 ←', axis: 'y', sign: -1, layer: p => p.y > 0.5 },
+            'Ui': { label: "U'", text: '【上】層 向右轉 →', axis: 'y', sign: 1, layer: p => p.y > 0.5 },
+            'F':  { label: 'F', text: '【前】面 順時針轉 ↻', axis: 'z', sign: -1, layer: p => p.z > 0.5 },
+            'Fi': { label: "F'", text: '【前】面 逆時針轉 ↺', axis: 'z', sign: 1, layer: p => p.z > 0.5 },
+            'D':  { label: 'D', text: '【下】層 向右轉 →', axis: 'y', sign: 1, layer: p => p.y < -0.5 },
+            'Di': { label: "D'", text: '【下】層 向左轉 ←', axis: 'y', sign: -1, layer: p => p.y < -0.5 }
+        };
+
+        const tutorialSteps = [
+            { id: 1, title: "底層白十字", desc: "把正面頂部的『白紅邊塊』轉到底部，與白色中心對齊。", setup: ['F', 'F'], solve: ['F', 'F'], cam: { x: 0.5, y: -0.5 } },
+            { id: 2, title: "第一層角塊歸位", desc: "把頂部的『白藍紅角塊』放到底層右下角，使用「右手公式」。", setup: ['U', 'R', 'Ui', 'Ri'], solve: ['R', 'U', 'Ri', 'Ui'], cam: { x: 0.3, y: -0.6 } },
+            { id: 3, title: "第二層邊塊 (向右)", desc: "<b>🎯 目標塊：</b>找頂部【沒有黃色】的邊塊，對齊中心成倒 T 字。<br><b>🗣️ 口訣：「一推遠離，二手接客，三正門送回」</b><br>示範向右放：頂層先推向左(遠離)，然後右邊做動作接它。", setup: ['Fi', 'Ui', 'F', 'U', 'R', 'U', 'Ri', 'Ui'], solve: ['U', 'R', 'Ui', 'Ri', 'Ui', 'Fi', 'U', 'F'], cam: { x: 0.3, y: -0.6 } },
+            { id: 4, title: "頂層黃十字", desc: "遇到黃色「橫線」，轉正面做一次公式，翻出黃十字。", setup: ['F', 'U', 'R', 'Ui', 'Ri', 'Fi'], solve: ['F', 'R', 'U', 'Ri', 'Ui', 'Fi'], cam: { x: 0.6, y: -0.4 } },
+            { id: 5, title: "對齊頂層邊塊", desc: "小魚公式，對齊側邊顏色（注意：角塊會短暫變亂是正常的）。", setup: ['R', 'Ui', 'Ui', 'Ri', 'Ui', 'R', 'Ui', 'Ri'], solve: ['R', 'U', 'Ri', 'U', 'R', 'U', 'U', 'Ri'], cam: { x: 0.5, y: -0.5 } },
+            { id: 6, title: "角塊大風吹", desc: "讓角塊移動到正確的角落（不理會黃色有沒有朝上）。", setup: ['Li', 'U', 'R', 'Ui', 'L', 'U', 'Ri', 'Ui'], solve: ['U', 'R', 'Ui', 'Li', 'U', 'Ri', 'Ui', 'L'], cam: { x: 0.5, y: -0.5 } },
+            { id: 7, title: "翻正最後角塊", desc: "不斷重複 R'D'RD。方塊會看起來全亂，堅持轉完就會復原！", setup: ['Di', 'Ri', 'D', 'R', 'Di', 'Ri', 'D', 'R'], solve: ['Ri', 'Di', 'R', 'D', 'Ri', 'Di', 'R', 'D'], cam: { x: 0.4, y: -0.4 } }
+        ];
+
+        // --- Three.js 引擎 ---
+        let scene, camera, renderer, worldGroup, cubeGroup, pivot, cubies = [];
+        let isAnimating = false;
+
+        function createCenterMaterial(colorHex, text) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 128; canvas.height = 128;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = colorHex; ctx.fillRect(0, 0, 128, 128);
+            ctx.fillStyle = '#000000'; ctx.font = 'bold 50px sans-serif';
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText(text, 64, 64);
+            return new THREE.MeshLambertMaterial({ map: new THREE.CanvasTexture(canvas) });
+        }
+
+        function init3D() {
+            const container = document.getElementById('canvas-container');
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 100);
+            camera.position.set(0, 0, 8);
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            container.appendChild(renderer.domElement);
+
+            scene.add(new THREE.AmbientLight(0xffffff, 0.9));
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.3);
+            dirLight.position.set(5, 5, 8);
+            scene.add(dirLight);
+
+            worldGroup = new THREE.Group(); scene.add(worldGroup);
+            cubeGroup = new THREE.Group(); worldGroup.add(cubeGroup);
+            pivot = new THREE.Object3D(); cubeGroup.add(pivot);
+
+            createCube();
+            setupControls(container);
+            animateLoop();
+        }
+
+        function createCube() {
+            cubies.forEach(c => cubeGroup.remove(c));
+            cubies = [];
+            cubeGroup.rotation.set(0,0,0);
+
+            const cR = '#3b82f6', cL = '#22c55e', cU = '#facc15', cD = '#ffffff', cF = '#ef4444', cB = '#f97316';
+            const basicMats = [
+                new THREE.MeshLambertMaterial({ color: cR }), new THREE.MeshLambertMaterial({ color: cL }),
+                new THREE.MeshLambertMaterial({ color: cU }), new THREE.MeshLambertMaterial({ color: cD }),
+                new THREE.MeshLambertMaterial({ color: cF }), new THREE.MeshLambertMaterial({ color: cB })
+            ];
+            const geometry = new THREE.BoxGeometry(0.96, 0.96, 0.96);
+
+            for(let x = -1; x <= 1; x++) {
+                for(let y = -1; y <= 1; y++) {
+                    for(let z = -1; z <= 1; z++) {
+                        let mats = basicMats.map(m => m.clone());
+                        if(x !== 1) mats[0] = new THREE.MeshBasicMaterial({color: 0x111111});
+                        if(x !== -1) mats[1] = new THREE.MeshBasicMaterial({color: 0x111111});
+                        if(y !== 1) mats[2] = new THREE.MeshBasicMaterial({color: 0x111111});
+                        if(y !== -1) mats[3] = new THREE.MeshBasicMaterial({color: 0x111111});
+                        if(z !== 1) mats[4] = new THREE.MeshBasicMaterial({color: 0x111111});
+                        if(z !== -1) mats[5] = new THREE.MeshBasicMaterial({color: 0x111111});
+
+                        if(x==1 && y==0 && z==0) mats[0] = createCenterMaterial(cR, '右');
+                        if(x==-1 && y==0 && z==0) mats[1] = createCenterMaterial(cL, '左');
+                        if(x==0 && y==1 && z==0) mats[2] = createCenterMaterial(cU, '上');
+                        if(x==0 && y==-1 && z==0) mats[3] = createCenterMaterial(cD, '下');
+                        if(x==0 && y==0 && z==1) mats[4] = createCenterMaterial(cF, '前');
+                        if(x==0 && y==0 && z==-1) mats[5] = createCenterMaterial(cB, '後');
+
+                        const mesh = new THREE.Mesh(geometry, mats);
+                        mesh.position.set(x, y, z);
+                        const edges = new THREE.EdgesGeometry(geometry);
+                        mesh.add(new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 2 })));
+                        cubeGroup.add(mesh); cubies.push(mesh);
+                    }
+                }
+            }
+        }
+
+        function instantMove(moveCode) {
+            const m = moveDict[moveCode];
+            pivot.rotation.set(0,0,0); pivot.position.set(0,0,0);
+            let active = [];
+            cubies.forEach(c => { if(m.layer(c.position)) { active.push(c); pivot.attach(c); } });
+            pivot.rotation[m.axis] = (Math.PI / 2) * m.sign;
+            pivot.updateMatrixWorld();
+            active.forEach(c => {
+                cubeGroup.attach(c);
+                c.position.set(Math.round(c.position.x), Math.round(c.position.y), Math.round(c.position.z));
+                let mat = new THREE.Matrix4().makeRotationFromQuaternion(c.quaternion);
+                for(let i=0; i<16; i++) mat.elements[i] = Math.round(mat.elements[i]);
+                c.quaternion.setFromRotationMatrix(mat);
+            });
+        }
+
+        function execute3DMove(moveCode, onComplete, speed = 12) {
+            if(isAnimating) return;
+            isAnimating = true;
+            const m = moveDict[moveCode];
+            pivot.rotation.set(0,0,0); pivot.position.set(0,0,0);
+            let active = [];
+            cubies.forEach(c => { if(m.layer(c.position)) { active.push(c); pivot.attach(c); } });
+
+            const targetAngle = (Math.PI / 2) * m.sign;
+            let frame = 0, totalFrames = speed; // 動畫速度
+
+            function animate() {
+                frame++;
+                pivot.rotation[m.axis] = targetAngle * (frame / totalFrames);
+                if (frame < totalFrames) { requestAnimationFrame(animate); } 
+                else {
+                    pivot.rotation[m.axis] = targetAngle; pivot.updateMatrixWorld();
+                    active.forEach(c => {
+                        cubeGroup.attach(c);
+                        c.position.set(Math.round(c.position.x), Math.round(c.position.y), Math.round(c.position.z));
+                        let mat = new THREE.Matrix4().makeRotationFromQuaternion(c.quaternion);
+                        for(let i=0; i<16; i++) mat.elements[i] = Math.round(mat.elements[i]);
+                        c.quaternion.setFromRotationMatrix(mat);
+                    });
+                    isAnimating = false;
+                    if(onComplete) onComplete();
+                }
+            }
+            animate();
+        }
+
+        // 觸控拖曳旋轉視角
+        function setupControls(container) {
+            let isDragging = false, prevPos = { x: 0, y: 0 };
+            const onDown = e => { isDragging = true; prevPos.x = e.touches ? e.touches[0].clientX : e.clientX; prevPos.y = e.touches ? e.touches[0].clientY : e.clientY; };
+            const onMove = e => {
+                if (!isDragging) return;
+                let x = e.touches ? e.touches[0].clientX : e.clientX, y = e.touches ? e.touches[0].clientY : e.clientY;
+                worldGroup.rotation.y += (x - prevPos.x) * 0.01;
+                worldGroup.rotation.x += (y - prevPos.y) * 0.01;
+                prevPos.x = x; prevPos.y = y;
+            };
+            const onUp = () => isDragging = false;
+            container.addEventListener('mousedown', onDown); window.addEventListener('mousemove', onMove); window.addEventListener('mouseup', onUp);
+            container.addEventListener('touchstart', onDown, {passive: true}); window.addEventListener('touchmove', onMove, {passive: true}); window.addEventListener('touchend', onUp);
+        }
+
+        function animateLoop() { requestAnimationFrame(animateLoop); renderer.render(scene, camera); }
+        window.addEventListener('resize', () => {
+            if(!camera || !renderer) return;
+            const container = document.getElementById('canvas-container');
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        });
+
+        // --- UI 控制 ---
+        let currentMode = 1; 
+        let currStep = 0, currMove = -1;
+
+        function switchMode(mode) {
+            if(isAnimating) return;
+            currentMode = mode;
+            
+            document.getElementById('tab-mode-1').className = `main-tab ${mode === 1 ? 'active' : ''}`;
+            document.getElementById('tab-mode-2').className = `main-tab ${mode === 2 ? 'active' : ''}`;
+            
+            if(mode === 1) {
+                document.getElementById('section-mode-1').classList.remove('hidden');
+                document.getElementById('section-mode-2').classList.add('hidden');
+                loadPracticeStep(currStep);
+            } else {
+                document.getElementById('section-mode-1').classList.add('hidden');
+                document.getElementById('section-mode-2').classList.remove('hidden');
+                worldGroup.rotation.set(0.4, -0.4, 0); // 實戰預設視角
+                createCube(); // 重置方塊
+            }
+        }
+
+        function renderPracticeNav() {
+            const nav = document.getElementById('step-nav-container');
+            nav.innerHTML = '';
+            tutorialSteps.forEach((step, idx) => {
+                const btn = document.createElement('button');
+                btn.className = `step-tab ${idx === currStep ? 'active' : ''}`;
+                btn.innerText = `第 ${step.id} 步`;
+                btn.onclick = () => loadPracticeStep(idx);
+                nav.appendChild(btn);
+            });
+        }
+
+        function loadPracticeStep(idx) {
+            if(isAnimating) return;
+            currStep = idx; currMove = -1;
+            const step = tutorialSteps[idx];
+
+            renderPracticeNav();
+            document.getElementById('step-badge').innerText = `階段 ${step.id}`;
+            document.getElementById('step-title').innerText = step.title;
+            document.getElementById('step-desc').innerHTML = step.desc;
+            
+            const display = document.getElementById('formula-display');
+            display.innerHTML = '';
+            step.solve.forEach((code, i) => {
+                const el = document.createElement('span');
+                el.className = 'move-box px-2 py-1 bg-slate-100 border border-slate-300 rounded text-slate-600';
+                el.id = `m-${i}`; el.innerText = moveDict[code].label;
+                display.appendChild(el);
+            });
+
+            const btn = document.getElementById('btn-next');
+            btn.disabled = false; btn.innerHTML = `點擊開始示範 (共 ${step.solve.length} 個動作)`;
+            document.getElementById('action-text').innerText = "點擊下方按鈕";
+
+            createCube();
+            step.setup.forEach(code => instantMove(code));
+            worldGroup.rotation.set(step.cam.x, step.cam.y, 0);
+            
+            const activeTab = document.querySelector('.step-tab.active');
+            if(activeTab) activeTab.scrollIntoView({ behavior: 'smooth', inline: 'center' });
+        }
+
+        function resetCurrentStep() { loadPracticeStep(currStep); }
+
+        function nextMove() {
+            if(isAnimating || currentMode !== 1) return;
+            const step = tutorialSteps[currStep];
+            currMove++;
+            
+            if(currMove >= step.solve.length) {
+                if(currStep < tutorialSteps.length - 1) loadPracticeStep(currStep + 1);
+                else switchMode(2); 
+                return;
+            }
+
+            const moveCode = step.solve[currMove];
+            const btn = document.getElementById('btn-next');
+            
+            document.querySelectorAll('.move-box').forEach(el => el.classList.remove('active'));
+            document.getElementById(`m-${currMove}`).classList.add('active');
+            document.getElementById('action-text').innerText = moveDict[moveCode].text;
+            
+            btn.disabled = true; btn.innerText = "轉動中...";
+            
+            execute3DMove(moveCode, () => {
+                btn.disabled = false;
+                if(currMove === step.solve.length - 1) {
+                    if(currStep === tutorialSteps.length - 1) {
+                        btn.innerHTML = "🎉 全部學會了！進入實戰 →";
+                    } else {
+                        btn.innerHTML = `✅ 完成！進入第 ${currStep + 2} 步 →`;
+                    }
+                } else {
+                    btn.innerHTML = "點擊執行下一步";
+                }
+            });
+        }
+
+        // ================= 新功能：實戰模式的手動操作 =================
+        function scrambleCube() {
+            if(isAnimating) return;
+            createCube();
+            const moves = Object.keys(moveDict);
+            for(let i=0; i<25; i++) {
+                instantMove(moves[Math.floor(Math.random() * moves.length)]);
+            }
+        }
+
+        // 供虛擬按鍵呼叫的函數
+        function manualMove(code) {
+            if(isAnimating) return;
+            // 速度稍微加快一點，讓手動玩起來更順暢 (參數 8 代表較快)
+            execute3DMove(code, null, 8); 
+        }
+
+        window.onload = () => { init3D(); switchMode(1); };
+    </script>
+</body>
+</html>
