@@ -1,6 +1,6 @@
 # Cube01
 
-A browser-based 3D Rubik's cube learning tool for practicing beginner solution steps and playing with a scrambled cube.
+A browser-based 3D Rubik's cube learning tool for practicing beginner solution steps, worked exercises, and scrambled-cube play.
 
 Live demo: https://cube01-rubik-open33166.netlify.app/
 
@@ -15,6 +15,7 @@ The deployed site was smoke-tested in Chrome:
 
 - 3D WebGL cube renders
 - seven practice steps load
+- each technique includes three step-by-step exercises
 - practice next-step flow advances
 - mode 2 opens
 - scramble and virtual controls run

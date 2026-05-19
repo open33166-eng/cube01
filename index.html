@@ -42,6 +42,17 @@
             border: 2px solid transparent; cursor: pointer;
         }
         .step-tab.active { background: #dbeafe; color: #1d4ed8; border-color: #3b82f6; }
+        .exercise-nav { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
+        .exercise-tab {
+            min-height: 44px; padding: 8px; border-radius: 10px; border: 2px solid #cbd5e1;
+            background: white; color: #475569; font-size: 12px; font-weight: 800; cursor: pointer;
+            line-height: 1.25; text-align: center;
+        }
+        .exercise-tab.active { background: #ecfdf5; color: #047857; border-color: #10b981; }
+        .exercise-goal {
+            background: #f0fdf4; border: 1px solid #bbf7d0; color: #14532d;
+            border-radius: 10px; padding: 10px 12px; font-size: 13px; line-height: 1.45; margin-bottom: 12px;
+        }
 
         /* 公式區塊 */
         .move-box { transition: all 0.2s; font-family: monospace; }
@@ -87,11 +98,13 @@
                     <h2 id="step-title" class="text-xl font-black text-slate-800">載入中...</h2>
                 </div>
                 <p id="step-desc" class="text-sm text-slate-600 mb-4 leading-relaxed bg-slate-100 p-3 rounded-lg border border-slate-200"></p>
+                <div id="exercise-nav-container" class="exercise-nav"></div>
+                <div id="exercise-goal" class="exercise-goal"></div>
 
                 <!-- 播放器 -->
                 <div class="bg-white border-2 border-blue-400 rounded-xl p-4 shadow-sm">
                     <div class="flex justify-between items-center mb-3">
-                        <span class="text-sm font-bold text-blue-700">跟著電腦示範慢慢轉：</span>
+                        <span id="exercise-label" class="text-sm font-bold text-blue-700">跟著電腦示範慢慢轉：</span>
                         <button onclick="resetCurrentStep()" class="text-xs text-slate-500 bg-slate-100 px-3 py-1 rounded-full hover:bg-slate-200">↺ 重設</button>
                     </div>
                     
@@ -188,15 +201,87 @@
             'Di': { label: "D'", text: '【下】層 向左轉 ←', axis: 'y', sign: -1, layer: p => p.y < -0.5 }
         };
 
+        const inverseMoveCode = code => code.endsWith('i') ? code.slice(0, -1) : `${code}i`;
+        const inverseSequence = moves => [...moves].reverse().map(inverseMoveCode);
+
         const tutorialSteps = [
-            { id: 1, title: "底層白十字", desc: "把正面頂部的『白紅邊塊』轉到底部，與白色中心對齊。", setup: ['F', 'F'], solve: ['F', 'F'], cam: { x: 0.5, y: -0.5 } },
-            { id: 2, title: "第一層角塊歸位", desc: "把頂部的『白藍紅角塊』放到底層右下角，使用「右手公式」。", setup: ['U', 'R', 'Ui', 'Ri'], solve: ['R', 'U', 'Ri', 'Ui'], cam: { x: 0.3, y: -0.6 } },
-            { id: 3, title: "第二層邊塊 (向右)", desc: "<b>🎯 目標塊：</b>找頂部【沒有黃色】的邊塊，對齊中心成倒 T 字。<br><b>🗣️ 口訣：「一推遠離，二手接客，三正門送回」</b><br>示範向右放：頂層先推向左(遠離)，然後右邊做動作接它。", setup: ['Fi', 'Ui', 'F', 'U', 'R', 'U', 'Ri', 'Ui'], solve: ['U', 'R', 'Ui', 'Ri', 'Ui', 'Fi', 'U', 'F'], cam: { x: 0.3, y: -0.6 } },
-            { id: 4, title: "頂層黃十字", desc: "遇到黃色「橫線」，轉正面做一次公式，翻出黃十字。", setup: ['F', 'U', 'R', 'Ui', 'Ri', 'Fi'], solve: ['F', 'R', 'U', 'Ri', 'Ui', 'Fi'], cam: { x: 0.6, y: -0.4 } },
-            { id: 5, title: "對齊頂層邊塊", desc: "小魚公式，對齊側邊顏色（注意：角塊會短暫變亂是正常的）。", setup: ['R', 'Ui', 'Ui', 'Ri', 'Ui', 'R', 'Ui', 'Ri'], solve: ['R', 'U', 'Ri', 'U', 'R', 'U', 'U', 'Ri'], cam: { x: 0.5, y: -0.5 } },
-            { id: 6, title: "角塊大風吹", desc: "讓角塊移動到正確的角落（不理會黃色有沒有朝上）。", setup: ['Li', 'U', 'R', 'Ui', 'L', 'U', 'Ri', 'Ui'], solve: ['U', 'R', 'Ui', 'Li', 'U', 'Ri', 'Ui', 'L'], cam: { x: 0.5, y: -0.5 } },
-            { id: 7, title: "翻正最後角塊", desc: "不斷重複 R'D'RD。方塊會看起來全亂，堅持轉完就會復原！", setup: ['Di', 'Ri', 'D', 'R', 'Di', 'Ri', 'D', 'R'], solve: ['Ri', 'Di', 'R', 'D', 'Ri', 'Di', 'R', 'D'], cam: { x: 0.4, y: -0.4 } }
+            {
+                id: 1,
+                title: "底層白十字",
+                desc: "核心技巧：先把白色邊塊移到能看清的位置，對齊同色中心，再送到底層白色中心旁邊。",
+                exercises: [
+                    { title: "基本：前面直落", goal: "白紅邊塊已在前面，只要前面轉 180 度，白色就會落到底層。", solve: ['F', 'F'], cam: { x: 0.5, y: -0.5 } },
+                    { title: "變化：右面直落", goal: "白藍邊塊在右面，先認中心顏色，再用右面轉 180 度送到底層。", solve: ['R', 'R'], cam: { x: 0.4, y: -0.8 } },
+                    { title: "挑戰：先對齊再落底", goal: "邊塊先在頂層錯位，先轉頂層對準中心，再用前面 180 度放到底層。", solve: ['U', 'F', 'F', 'Ui'], cam: { x: 0.55, y: -0.55 } }
+                ]
+            },
+            {
+                id: 2,
+                title: "第一層角塊歸位",
+                desc: "核心技巧：把白色角塊放到目標角的正上方，重複「右手公式」R U R' U'，直到白色入底。",
+                exercises: [
+                    { title: "基本：一次右手", goal: "角塊已在右上方，用一次右手公式把它送入第一層。", solve: ['R', 'U', 'Ri', 'Ui'], cam: { x: 0.3, y: -0.6 } },
+                    { title: "變化：連做兩次", goal: "白色角塊方向未對，一次未必完成；跟著答案連做兩次右手公式。", solve: ['R', 'U', 'Ri', 'Ui', 'R', 'U', 'Ri', 'Ui'], cam: { x: 0.35, y: -0.65 } },
+                    { title: "挑戰：先轉頂再插入", goal: "先用 U 把角塊帶到右手位，再用右手公式完成插入。", solve: ['U', 'R', 'U', 'Ri', 'Ui'], cam: { x: 0.35, y: -0.55 } }
+                ]
+            },
+            {
+                id: 3,
+                title: "第二層邊塊",
+                desc: "<b>🎯 目標塊：</b>找頂層【沒有黃色】的邊塊，對齊中心成倒 T 字。<br><b>🗣️ 口訣：「一推遠離，二手接客，三正門送回」</b>",
+                exercises: [
+                    { title: "基本：向右放", goal: "目標邊塊要進右邊槽位：頂層先推遠離，再用右手接回，最後正門送回。", solve: ['U', 'R', 'Ui', 'Ri', 'Ui', 'Fi', 'U', 'F'], cam: { x: 0.3, y: -0.6 } },
+                    { title: "變化：向左放", goal: "目標邊塊要進左邊槽位：先推遠離左槽，再用左手接回。", solve: ['Ui', 'Li', 'U', 'L', 'U', 'F', 'Ui', 'Fi'], cam: { x: 0.35, y: -0.45 } },
+                    { title: "挑戰：先調位再向右", goal: "先用 U 對齊成倒 T，再完整做一次向右放公式。", solve: ['U', 'U', 'R', 'Ui', 'Ri', 'Ui', 'Fi', 'U', 'F'], cam: { x: 0.32, y: -0.62 } }
+                ]
+            },
+            {
+                id: 4,
+                title: "頂層黃十字",
+                desc: "核心技巧：觀察頂面黃色形狀。線形、L 形、點形都用 F (R U R' U') F'，只是開始前的方向不同。",
+                exercises: [
+                    { title: "基本：橫線變十字", goal: "把黃色橫線放水平，做一次前面包住的右手公式。", solve: ['F', 'R', 'U', 'Ri', 'Ui', 'Fi'], cam: { x: 0.6, y: -0.4 } },
+                    { title: "變化：L 形轉正", goal: "L 形先轉頂層調成左後角，再做一次黃十字公式。", solve: ['U', 'F', 'R', 'U', 'Ri', 'Ui', 'Fi'], cam: { x: 0.65, y: -0.35 } },
+                    { title: "挑戰：點形做兩次", goal: "頂面只有中心點時，連做兩次黃十字公式，先變 L 或線，再變十字。", solve: ['F', 'R', 'U', 'Ri', 'Ui', 'Fi', 'F', 'R', 'U', 'Ri', 'Ui', 'Fi'], cam: { x: 0.62, y: -0.38 } }
+                ]
+            },
+            {
+                id: 5,
+                title: "對齊頂層邊塊",
+                desc: "核心技巧：用小魚公式調整頂層邊塊位置。角塊短暫變亂是正常的，重點是把側邊顏色對齊中心。",
+                exercises: [
+                    { title: "基本：一次小魚", goal: "前面有一組顏色已對齊，做一次小魚公式讓更多邊塊對上中心。", solve: ['R', 'U', 'Ri', 'U', 'R', 'U', 'U', 'Ri'], cam: { x: 0.5, y: -0.5 } },
+                    { title: "變化：先轉頂再小魚", goal: "先用 U 把已對齊的一面放到前方，再做小魚公式。", solve: ['U', 'R', 'U', 'Ri', 'U', 'R', 'U', 'U', 'Ri'], cam: { x: 0.55, y: -0.45 } },
+                    { title: "挑戰：兩輪對齊", goal: "做完第一輪後再調頂層，第二輪完成邊塊對齊。", solve: ['R', 'U', 'Ri', 'U', 'R', 'U', 'U', 'Ri', 'U', 'R', 'U', 'Ri', 'U', 'R', 'U', 'U', 'Ri'], cam: { x: 0.5, y: -0.52 } }
+                ]
+            },
+            {
+                id: 6,
+                title: "角塊大風吹",
+                desc: "核心技巧：先找到已在正確角落的角塊，把它放在右前方，再用大風吹公式搬動其他三個角。",
+                exercises: [
+                    { title: "基本：三角交換", goal: "右前角固定，其餘三個角用大風吹公式交換到正確角落。", solve: ['U', 'R', 'Ui', 'Li', 'U', 'Ri', 'Ui', 'L'], cam: { x: 0.5, y: -0.5 } },
+                    { title: "變化：先找固定角", goal: "先轉 U 把正確角放到右前方，再做大風吹公式。", solve: ['U', 'U', 'R', 'Ui', 'Li', 'U', 'Ri', 'Ui', 'L'], cam: { x: 0.52, y: -0.48 } },
+                    { title: "挑戰：兩次大風吹", goal: "沒有角塊一次就全對時，做兩輪大風吹，中間用 U 調整固定角。", solve: ['U', 'R', 'Ui', 'Li', 'U', 'Ri', 'Ui', 'L', 'U', 'U', 'R', 'Ui', 'Li', 'U', 'Ri', 'Ui', 'L'], cam: { x: 0.48, y: -0.5 } }
+                ]
+            },
+            {
+                id: 7,
+                title: "翻正最後角塊",
+                desc: "核心技巧：右前角重複 R' D' R D 直到黃色朝上，只用 U 換下一個角。過程看似打亂，但完成後會復原。",
+                exercises: [
+                    { title: "基本：翻一個角", goal: "固定右前角，重複兩次 R' D' R D，把角塊翻正。", solve: ['Ri', 'Di', 'R', 'D', 'Ri', 'Di', 'R', 'D'], cam: { x: 0.4, y: -0.4 } },
+                    { title: "變化：換下一角", goal: "先翻正右前角，再只轉 U 換下一個角，繼續同一組動作。", solve: ['Ri', 'Di', 'R', 'D', 'U', 'Ri', 'Di', 'R', 'D'], cam: { x: 0.42, y: -0.42 } },
+                    { title: "挑戰：兩個角完整收尾", goal: "翻正第一個角，轉 U 換第二個角，再翻正；不要轉整顆方塊。", solve: ['Ri', 'Di', 'R', 'D', 'Ri', 'Di', 'R', 'D', 'U', 'Ri', 'Di', 'R', 'D', 'Ri', 'Di', 'R', 'D'], cam: { x: 0.4, y: -0.4 } }
+                ]
+            }
         ];
+
+        tutorialSteps.forEach(step => {
+            step.exercises.forEach(exercise => {
+                exercise.setup = inverseSequence(exercise.solve);
+            });
+        });
 
         // --- Three.js 引擎 ---
         let scene, camera, renderer, worldGroup, cubeGroup, pivot, cubies = [];
@@ -352,7 +437,7 @@
 
         // --- UI 控制 ---
         let currentMode = 1; 
-        let currStep = 0, currMove = -1;
+        let currStep = 0, currExercise = 0, currMove = -1;
 
         function switchMode(mode) {
             if(isAnimating) return;
@@ -364,7 +449,7 @@
             if(mode === 1) {
                 document.getElementById('section-mode-1').classList.remove('hidden');
                 document.getElementById('section-mode-2').classList.add('hidden');
-                loadPracticeStep(currStep);
+                loadPracticeStep(currStep, currExercise);
             } else {
                 document.getElementById('section-mode-1').classList.add('hidden');
                 document.getElementById('section-mode-2').classList.remove('hidden');
@@ -380,24 +465,45 @@
                 const btn = document.createElement('button');
                 btn.className = `step-tab ${idx === currStep ? 'active' : ''}`;
                 btn.innerText = `第 ${step.id} 步`;
-                btn.onclick = () => loadPracticeStep(idx);
+                btn.onclick = () => loadPracticeStep(idx, 0);
                 nav.appendChild(btn);
             });
         }
 
-        function loadPracticeStep(idx) {
+        function renderExerciseNav() {
+            const nav = document.getElementById('exercise-nav-container');
+            const step = tutorialSteps[currStep];
+            nav.innerHTML = '';
+            step.exercises.forEach((exercise, idx) => {
+                const btn = document.createElement('button');
+                btn.className = `exercise-tab ${idx === currExercise ? 'active' : ''}`;
+                btn.innerHTML = `練習 ${idx + 1}<br><span class="font-normal">${exercise.title}</span>`;
+                btn.onclick = () => loadPracticeStep(currStep, idx);
+                nav.appendChild(btn);
+            });
+        }
+
+        function getCurrentExercise() {
+            return tutorialSteps[currStep].exercises[currExercise];
+        }
+
+        function loadPracticeStep(idx, exerciseIdx = 0) {
             if(isAnimating) return;
-            currStep = idx; currMove = -1;
+            currStep = idx; currExercise = exerciseIdx; currMove = -1;
             const step = tutorialSteps[idx];
+            const exercise = getCurrentExercise();
 
             renderPracticeNav();
+            renderExerciseNav();
             document.getElementById('step-badge').innerText = `階段 ${step.id}`;
             document.getElementById('step-title').innerText = step.title;
             document.getElementById('step-desc').innerHTML = step.desc;
+            document.getElementById('exercise-goal').innerHTML = `<b>${exercise.title}</b><br>${exercise.goal}`;
+            document.getElementById('exercise-label').innerText = `答案示範：練習 ${currExercise + 1} / ${step.exercises.length}`;
             
             const display = document.getElementById('formula-display');
             display.innerHTML = '';
-            step.solve.forEach((code, i) => {
+            exercise.solve.forEach((code, i) => {
                 const el = document.createElement('span');
                 el.className = 'move-box px-2 py-1 bg-slate-100 border border-slate-300 rounded text-slate-600';
                 el.id = `m-${i}`; el.innerText = moveDict[code].label;
@@ -405,43 +511,47 @@
             });
 
             const btn = document.getElementById('btn-next');
-            btn.disabled = false; btn.innerHTML = `點擊開始示範 (共 ${step.solve.length} 個動作)`;
-            document.getElementById('action-text').innerText = "點擊下方按鈕";
+            btn.disabled = false; btn.innerHTML = `開始練習 ${currExercise + 1} 的逐步答案 (共 ${exercise.solve.length} 個動作)`;
+            document.getElementById('action-text').innerText = "點擊下方按鈕看第一步答案";
 
             createCube();
-            step.setup.forEach(code => instantMove(code));
-            worldGroup.rotation.set(step.cam.x, step.cam.y, 0);
+            exercise.setup.forEach(code => instantMove(code));
+            worldGroup.rotation.set(exercise.cam.x, exercise.cam.y, 0);
             
             const activeTab = document.querySelector('.step-tab.active');
             if(activeTab) activeTab.scrollIntoView({ behavior: 'smooth', inline: 'center' });
         }
 
-        function resetCurrentStep() { loadPracticeStep(currStep); }
+        function resetCurrentStep() { loadPracticeStep(currStep, currExercise); }
 
         function nextMove() {
             if(isAnimating || currentMode !== 1) return;
             const step = tutorialSteps[currStep];
+            const exercise = getCurrentExercise();
             currMove++;
             
-            if(currMove >= step.solve.length) {
-                if(currStep < tutorialSteps.length - 1) loadPracticeStep(currStep + 1);
+            if(currMove >= exercise.solve.length) {
+                if(currExercise < step.exercises.length - 1) loadPracticeStep(currStep, currExercise + 1);
+                else if(currStep < tutorialSteps.length - 1) loadPracticeStep(currStep + 1, 0);
                 else switchMode(2); 
                 return;
             }
 
-            const moveCode = step.solve[currMove];
+            const moveCode = exercise.solve[currMove];
             const btn = document.getElementById('btn-next');
             
             document.querySelectorAll('.move-box').forEach(el => el.classList.remove('active'));
             document.getElementById(`m-${currMove}`).classList.add('active');
-            document.getElementById('action-text').innerText = moveDict[moveCode].text;
+            document.getElementById('action-text').innerText = `第 ${currMove + 1} 步 / ${exercise.solve.length}：${moveDict[moveCode].text}`;
             
             btn.disabled = true; btn.innerText = "轉動中...";
             
             execute3DMove(moveCode, () => {
                 btn.disabled = false;
-                if(currMove === step.solve.length - 1) {
-                    if(currStep === tutorialSteps.length - 1) {
+                if(currMove === exercise.solve.length - 1) {
+                    if(currExercise < step.exercises.length - 1) {
+                        btn.innerHTML = `✅ 練習 ${currExercise + 1} 完成！進入練習 ${currExercise + 2} →`;
+                    } else if(currStep === tutorialSteps.length - 1) {
                         btn.innerHTML = "🎉 全部學會了！進入實戰 →";
                     } else {
                         btn.innerHTML = `✅ 完成！進入第 ${currStep + 2} 步 →`;
